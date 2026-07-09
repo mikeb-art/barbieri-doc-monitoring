@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WS Display — Barbieri DOC Monitoring</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --navy:#14417e; --navy-2:#1c4e8a; --navy-3:#0f3568;
+    --hl:#2f6cb3; --gold:#f3d375; --ltblue:#9fc3ea;
+    --bg:#eef2f7; --card:#ffffff; --ink:#1b2a41; --muted:#6b7f99;
+    --blue:#1f6fd6; --green:#1e9e4a; --amber:#d98a00; --red:#d93838; --crit:#8e1616;
+    --radius:12px; --shadow:0 2px 10px rgba(20,50,90,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI",-apple-system,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{width:255px;background:linear-gradient(180deg,var(--navy-2),var(--navy) 40%,var(--navy-3));color:#fff;display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;overflow-y:auto;z-index:10}
+  .logo-card{background:#fff;margin:16px 16px 6px;border-radius:6px;padding:8px 12px;text-align:center}
+  .logo-card .tag{font-size:8px;letter-spacing:.4px;color:#6b7f99;text-transform:uppercase}
+  .logo-card .logo{font-weight:900;font-size:22px;color:#0d2f60;letter-spacing:-.5px}
+  .logo-card .logo span{color:#2f6cb3}
+  .app-title{text-align:center;font-size:12px;font-weight:700;letter-spacing:2.5px;margin:6px 0 14px;color:#fff}
+  .nav-label{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--ltblue);padding:12px 20px 4px;text-transform:uppercase}
+  .nav-label.loc{color:var(--gold)}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;font-size:14px;color:#dbe7f5;cursor:pointer;border-left:4px solid transparent}
+  .nav-item:hover{background:rgba(255,255,255,.07)}
+  .nav-item.active{background:var(--hl);border-left-color:var(--gold);color:#fff;font-weight:600}
+  .nav-item .ico{width:18px;text-align:center}
+  .nav-item .cnt{margin-left:auto;font-size:11px;background:rgba(255,255,255,.15);border-radius:10px;padding:1px 8px}
+  .nav-item .cnt.bad{background:var(--red)}
+  .side-foot{margin-top:auto;padding:14px}
+  .user-card{background:rgba(255,255,255,.1);border-radius:8px;padding:10px 12px;font-size:13px;display:none}
+  .user-card .role{font-size:11px;color:var(--ltblue)}
+  .signout{margin-top:10px;width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);color:#dbe7f5;border-radius:8px;padding:8px;font-size:13px;cursor:pointer}
+  .signout:hover{background:rgba(255,255,255,.15)}
+
+  /* ---------- Main ---------- */
+  .main{margin-left:255px;flex:1;display:flex;flex-direction:column;min-width:0}
+  .topbar{background:#fff;padding:14px 26px;box-shadow:0 1px 4px rgba(20,50,90,.06);position:sticky;top:0;z-index:5}
+  .topbar h1{font-size:19px;display:flex;align-items:center;gap:8px}
+  .topbar .sub{font-size:12.5px;color:#5a7bb0;margin-top:2px}
+  .content{padding:22px 26px 60px}
+
+  /* stats */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px;margin-bottom:22px}
+  .stat{background:var(--card);border-radius:10px;box-shadow:var(--shadow);padding:14px 18px;border-top:4px solid var(--blue)}
+  .stat .lbl{font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase}
+  .stat .val{font-size:30px;font-weight:800;margin-top:2px}
+  .stat.ok{border-top-color:var(--green)} .stat.ok .val{color:var(--green)}
+  .stat.warn{border-top-color:var(--amber)} .stat.warn .val{color:var(--amber)}
+  .stat.oot{border-top-color:var(--red)} .stat.oot .val{color:var(--red)}
+  .stat.crit{border-top-color:var(--crit)} .stat.crit .val{color:var(--crit)}
+  .stat.mats{border-top-color:var(--blue)} .stat.mats .val{color:var(--ink)}
+
+  /* panel */
+  .panel{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:20px}
+  .panel-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #e7edf5;flex-wrap:wrap}
+  .panel-head h2{font-size:15.5px;flex:1;min-width:200px}
+  .pill{border:1px solid #d3deeb;background:#fff;color:#3d5a80;border-radius:20px;padding:5px 14px;font-size:12.5px;cursor:pointer}
+  .pill:hover{background:#f0f5fb}
+  .pill.on{background:var(--navy-2);color:#fff;border-color:var(--navy-2)}
+
+  /* readings table */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#51698a;background:#eef3f9;padding:8px 18px;text-align:left;border-top:1px solid #e7edf5}
+  td{padding:10px 18px;border-top:1px solid #f1f5fa;vertical-align:middle}
+  tr:hover td{background:#fbfdff}
+  .mat-name{font-weight:600}
+  .val-de{font-weight:800;font-size:15px}
+  .v-ok{color:var(--green)} .v-warn{color:var(--amber)} .v-oot{color:var(--red)} .v-crit{color:var(--crit)}
+  .chip{font-size:10.5px;font-weight:700;letter-spacing:.3px;border-radius:10px;padding:2px 9px;white-space:nowrap;display:inline-block}
+  .c-ok{background:#dff4e4;color:#1e9e4a} .c-warn{background:#fff3d6;color:#9a7200}
+  .c-oot{background:#fde1e1;color:#c02b2b} .c-crit{background:#f6d3d3;color:#8e1616}
+  .c-week{background:#e8f6df;color:#4e8a1e} .c-month{background:#fdeed3;color:#c07600}
+  .stale{font-size:11px;color:var(--red);font-weight:600}
+  .ago{font-size:11.5px;color:var(--muted)}
+
+  /* chart */
+  .chart-wrap{position:relative;height:380px;padding:12px 18px 18px}
+  .mat-toggles{display:flex;flex-wrap:wrap;gap:8px;padding:12px 18px 0}
+  .mtog{display:flex;align-items:center;gap:6px;border:1px solid #d3deeb;border-radius:20px;padding:4px 12px;font-size:12px;cursor:pointer;background:#fff;color:#3d5a80;user-select:none}
+  .mtog .sw{width:10px;height:10px;border-radius:50%}
+  .mtog.off{opacity:.4}
+
+  .empty{padding:56px 20px;text-align:center;color:#7d97b6;font-size:15px}
+  .empty .ei{font-size:26px;margin-bottom:8px}
+
+  /* sign-in gate */
+  .gate{margin:80px auto;max-width:420px;background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:36px;text-align:center}
+  .gate .big{font-size:34px;margin-bottom:10px}
+  .gate h2{margin-bottom:8px}
+  .gate p{font-size:13.5px;color:var(--muted);margin-bottom:18px}
+  .gbtn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:10px 22px;font-size:14px;font-weight:600;cursor:pointer}
+  .gbtn:hover{background:#1a5fbd}
+  .loading{padding:40px;text-align:center;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="logo-card"><div class="tag">WholeSale Displays</div><div class="logo">WS<span>Display</span></div></div>
+  <div class="app-title">BARBIERI DOC</div>
+  <div class="nav-label">Views</div>
+  <div class="nav-item active" data-loc="ALL" onclick="selectLoc('ALL')"><span class="ico">📊</span> Dashboard</div>
+  <div class="nav-label loc">Locations</div>
+  <div class="nav-item" data-loc="CA" onclick="selectLoc('CA')"><span class="ico">☀️</span> California <span class="cnt" id="cntCA">–</span></div>
+  <div class="nav-item" data-loc="MX" onclick="selectLoc('MX')"><span class="ico">🌵</span> Mexico <span class="cnt" id="cntMX">–</span></div>
+  <div class="nav-item" data-loc="PA" onclick="selectLoc('PA')"><span class="ico">🔔</span> Pennsylvania <span class="cnt" id="cntPA">–</span></div>
+  <div class="side-foot">
+    <div class="user-card" id="userCard"><div id="userName"></div><div class="role" id="userEmail"></div></div>
+    <button class="signout" id="authBtn" onclick="handleAuthClick()">Sign in with Google</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <h1 id="pageTitle">🎯 Barbieri DOC Monitoring</h1>
+    <div class="sub" id="pageSub">ΔE color accuracy across CA · MX · PA — thresholds: OK &lt; 3.0 · Warning 3.0–3.99 · Out of Tolerance 4.0–9.99 · Critical ≥ 10</div>
+  </div>
+  <div class="content" id="content">
+    <div class="gate" id="gate">
+      <div class="big">🎯</div>
+      <h2>Barbieri DOC Monitoring</h2>
+      <p>Sign in with your <b>wsdisplay.com</b> Google account to view ΔE readings and trends.</p>
+      <button class="gbtn" onclick="handleAuthClick()">Sign in with Google</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ CONFIG ============ */
+const CONFIG = {
+  CLIENT_ID: "919263581465-0g7m20g0j2b9g6e1njsm9b9kmaspsf4e.apps.googleusercontent.com",
+  SHEETS: {
+    CA: "1WgLOZpJy7I22_bUvLD9TleEbaBjRJJYFBreAFV8q4qA",
+    MX: "1OlDobUChJP6r2FFEo91AmcVVWq3QXieydeF5ofsL2xQ",
+    PA: "1Bo2ctHv6mY9NwxofnhLII4XL03-pY5CgtN8Wbi492RI"
+  },
+  TAB: "Barbieri DOC Delta E Data form",
+  DOMAIN: "wsdisplay.com"
+};
+const LOC_NAMES = { ALL:"All Locations", CA:"California", MX:"Mexico", PA:"Pennsylvania" };
+const PALETTE = ["#1f6fd6","#1e9e4a","#d98a00","#d93838","#7b3fbf","#0e8a76","#b35c00","#4b3fbf","#c02b78","#42618a","#8a6d1e"];
+
+/* ============ AUTH (Google Identity Services) ============ */
+let user = null, accessToken = null, tokenClient = null;
+
+function initAuth(){
+  if(!window.google || !google.accounts || !google.accounts.oauth2){ setTimeout(initAuth, 300); return; }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CONFIG.CLIENT_ID,
+    scope: "openid email profile https://www.googleapis.com/auth/spreadsheets.readonly",
+    callback: async (resp) => {
+      if(resp.error){ alert("Sign-in failed: " + resp.error); return; }
+      accessToken = resp.access_token;
+      const r = await fetch("https://www.googleapis.com/oauth2/v3/userinfo",
+        { headers: { Authorization: "Bearer " + accessToken } });
+      const info = await r.json();
+      if(!info.email || !info.email.endsWith("@" + CONFIG.DOMAIN)){
+        alert("Please sign in with your " + CONFIG.DOMAIN + " account.");
+        try{ google.accounts.oauth2.revoke(accessToken, ()=>{}); }catch(e){}
+        accessToken = null; return;
+      }
+      user = { name: info.name || info.email, email: info.email };
+      updateUserUI();
+      loadAll();
+    }
+  });
+}
+window.addEventListener("load", initAuth);
+
+function handleAuthClick(){
+  if(user){
+    if(accessToken){ try{ google.accounts.oauth2.revoke(accessToken, ()=>{}); }catch(e){} }
+    user = null; accessToken = null; DATA = {};
+    location.reload(); return;
+  }
+  if(!tokenClient){ alert("Google sign-in is still loading — try again in a second."); return; }
+  tokenClient.requestAccessToken({ prompt: "" });
+}
+
+function updateUserUI(){
+  const card = document.getElementById("userCard"), btn = document.getElementById("authBtn");
+  if(user){
+    card.style.display = "block";
+    document.getElementById("userName").textContent = user.name;
+    document.getElementById("userEmail").textContent = user.email;
+    btn.textContent = "Sign out";
+  } else {
+    card.style.display = "none";
+    btn.textContent = "Sign in with Google";
+  }
+}
+
+/* ============ DATA ============ */
+let DATA = {};      // {loc: {materials:[{name, monthly, points:[[date,val]]}]}}
+let currentLoc = localStorage.getItem("bdoc_loc") || "ALL";
+let chart = null;
+
+async function fetchTab(sheetId){
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent("'" + CONFIG.TAB + "'!A1:Z2000")}?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`;
+  const r = await fetch(url, { headers: { Authorization: "Bearer " + accessToken } });
+  if(!r.ok) throw new Error(`HTTP ${r.status} reading sheet`);
+  const j = await r.json();
+  return j.values || [];
+}
+
+function cleanHeader(h){
+  h = String(h);
+  h = h.replace(/\s*weekly.*$/i, "").replace(/\s*monthly.*$/i, "").replace(/\s*total\s*delta\s*e.*$/i, "");
+  return h.replace(/\n/g, " ").replace(/[: ]+$/, "").trim();
+}
+function isMonthly(h){ return /monthly/i.test(String(h)); }
+
+function parseDate(raw){
+  if(typeof raw === "number" && raw > 30000 && raw < 60000){
+    return new Date(Date.UTC(1899, 11, 30) + raw * 86400000);
+  }
+  const s = String(raw).trim().split(" ")[0];
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m) return new Date(Date.UTC(+m[3], +m[1]-1, +m[2]));
+  m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if(m) return new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+  return null;
+}
+
+function parseRows(rows){
+  if(!rows || !rows.length) return { materials: [] };
+  const headers = rows[0];
+  const matCols = [];
+  headers.forEach((h, i) => {
+    if(i < 3) return;                       // timestamp / meta columns
+    const name = cleanHeader(h);
+    if(!name || /^(column \d+|score)$/i.test(name)) return;
+    matCols.push({ name, idx: i, monthly: isMonthly(h) });
+  });
+  const series = {};
+  matCols.forEach(m => series[m.name] = { monthly: m.monthly, points: [] });
+  for(let r = 1; r < rows.length; r++){
+    const row = rows[r];
+    if(!row || row[0] === undefined || row[0] === "") continue;
+    const dt = parseDate(row[0]);
+    if(!dt) continue;
+    matCols.forEach(m => {
+      if(m.idx >= row.length) return;
+      const cell = String(row[m.idx]).trim();
+      if(!cell) return;
+      const v = parseFloat(cell.replace(",", "."));
+      if(!isNaN(v) && v > 0) series[m.name].points.push([dt, v]);
+    });
+  }
+  const materials = Object.keys(series)
+    .filter(k => series[k].points.length > 0)
+    .map(k => {
+      const pts = series[k].points.sort((a,b) => a[0] - b[0]);
+      return { name: k, monthly: series[k].monthly, points: pts };
+    });
+  return { materials };
+}
+
+async function loadAll(){
+  document.getElementById("content").innerHTML = `<div class="loading">Loading ΔE data from all three locations…</div>`;
+  const locs = Object.keys(CONFIG.SHEETS);
+  const results = await Promise.allSettled(locs.map(l => fetchTab(CONFIG.SHEETS[l])));
+  results.forEach((res, i) => {
+    const loc = locs[i];
+    if(res.status === "fulfilled"){ DATA[loc] = parseRows(res.value); }
+    else { DATA[loc] = { materials: [], error: String(res.reason) }; if(String(res.reason).includes("401")) accessToken = null; }
+  });
+  updateSidebarCounts();
+  selectLoc(currentLoc);
+}
+
+/* ============ STATUS HELPERS ============ */
+function statusOf(v){ return v >= 10 ? "crit" : v >= 4 ? "oot" : v >= 3 ? "warn" : "ok"; }
+const STATUS_LABEL = { ok:"✅ OK", warn:"⚠️ Warning", oot:"🔴 Out of Tolerance", crit:"🚨 Critical" };
+function latest(m){ return m.points[m.points.length - 1]; }
+function daysAgo(d){ return Math.floor((Date.now() - d.getTime()) / 86400000); }
+function isStale(m){ const a = daysAgo(latest(m)[0]); return m.monthly ? a > 45 : a > 14; }
+function fmtDate(d){ return d.toISOString().slice(0, 10); }
+
+function locCounts(loc){
+  const c = { ok:0, warn:0, oot:0, crit:0, mats:0 };
+  (DATA[loc]?.materials || []).forEach(m => { c[statusOf(latest(m)[1])]++; c.mats++; });
+  return c;
+}
+
+function updateSidebarCounts(){
+  ["CA","MX","PA"].forEach(loc => {
+    const c = locCounts(loc), el = document.getElementById("cnt" + loc);
+    const bad = c.oot + c.crit;
+    el.textContent = bad > 0 ? bad + "⚠" : c.mats;
+    el.className = "cnt" + (bad > 0 ? " bad" : "");
+  });
+}
+
+/* ============ RENDER ============ */
+function selectLoc(loc){
+  currentLoc = loc;
+  localStorage.setItem("bdoc_loc", loc);
+  document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.loc === loc));
+  document.getElementById("pageTitle").innerHTML = loc === "ALL" ? "🎯 Barbieri DOC Monitoring" : "🎯 " + LOC_NAMES[loc];
+  if(!user){ return; }
+  render();
+}
+
+function statCards(c){
+  return `<div class="stats">
+    <div class="stat mats"><div class="lbl">Materials</div><div class="val">${c.mats}</div></div>
+    <div class="stat ok"><div class="lbl">OK</div><div class="val">${c.ok}</div></div>
+    <div class="stat warn"><div class="lbl">Warning</div><div class="val">${c.warn}</div></div>
+    <div class="stat oot"><div class="lbl">Out of Tolerance</div><div class="val">${c.oot}</div></div>
+    <div class="stat crit"><div class="lbl">Critical</div><div class="val">${c.crit}</div></div>
+  </div>`;
+}
+
+function readingsTable(loc){
+  const mats = (DATA[loc]?.materials || []).slice()
+    .sort((a,b) => latest(b)[1] - latest(a)[1]);
+  if(!mats.length) return `<div class="empty"><div class="ei">📭</div>No readings found${DATA[loc]?.error ? " — " + DATA[loc].error : ""}</div>`;
+  const rows = mats.map(m => {
+    const [d, v] = latest(m), st = statusOf(v), ago = daysAgo(d);
+    return `<tr>
+      <td class="mat-name">${m.name}</td>
+      <td><span class="chip ${m.monthly ? "c-month" : "c-week"}">${m.monthly ? "MONTHLY" : "WEEKLY"}</span></td>
+      <td class="val-de v-${st}">${v.toFixed(2)}</td>
+      <td>${fmtDate(d)} <span class="ago">(${ago}d ago)</span>${isStale(m) ? ' <span class="stale">· overdue</span>' : ""}</td>
+      <td><span class="chip c-${st}">${STATUS_LABEL[st]}</span></td>
+    </tr>`;
+  }).join("");
+  return `<table><thead><tr><th>Material</th><th>Cadence</th><th>Max ΔE</th><th>Last Reading</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function render(){
+  const el = document.getElementById("content");
+  if(currentLoc === "ALL"){
+    const total = { ok:0, warn:0, oot:0, crit:0, mats:0 };
+    ["CA","MX","PA"].forEach(l => { const c = locCounts(l); Object.keys(total).forEach(k => total[k] += c[k]); });
+    el.innerHTML = statCards(total) + ["CA","MX","PA"].map(l => `
+      <div class="panel">
+        <div class="panel-head"><h2>${LOC_NAMES[l]}</h2>
+          <button class="pill" onclick="selectLoc('${l}')">Details & trend →</button></div>
+        ${readingsTable(l)}
+      </div>`).join("");
+  } else {
+    el.innerHTML = statCards(locCounts(currentLoc)) + `
+      <div class="panel">
+        <div class="panel-head"><h2>Latest readings — ${LOC_NAMES[currentLoc]}</h2></div>
+        ${readingsTable(currentLoc)}
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>ΔE Trend</h2>
+          <button class="pill" data-range="90" onclick="setRange(90)">3 mo</button>
+          <button class="pill" data-range="180" onclick="setRange(180)">6 mo</button>
+          <button class="pill" data-range="365" onclick="setRange(365)">1 yr</button>
+          <button class="pill" data-range="0" onclick="setRange(0)">All</button>
+        </div>
+        <div class="mat-toggles" id="matToggles"></div>
+        <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+      </div>`;
+    buildToggles();
+    setRange(+(localStorage.getItem("bdoc_range") || 180));
+  }
+}
+
+/* ============ TREND CHART ============ */
+let hiddenMats = new Set();
+
+function buildToggles(){
+  const mats = DATA[currentLoc]?.materials || [];
+  document.getElementById("matToggles").innerHTML = mats.map((m, i) => `
+    <div class="mtog ${hiddenMats.has(m.name) ? "off" : ""}" onclick="toggleMat('${m.name.replace(/'/g, "\\'")}')">
+      <span class="sw" style="background:${PALETTE[i % PALETTE.length]}"></span>${m.name}
+    </div>`).join("");
+}
+function toggleMat(name){
+  hiddenMats.has(name) ? hiddenMats.delete(name) : hiddenMats.add(name);
+  buildToggles(); drawChart();
+}
+let rangeDays = 180;
+function setRange(d){
+  rangeDays = d;
+  localStorage.setItem("bdoc_range", d);
+  document.querySelectorAll(".pill[data-range]").forEach(p => p.classList.toggle("on", +p.dataset.range === d));
+  drawChart();
+}
+
+function drawChart(){
+  const mats = DATA[currentLoc]?.materials || [];
+  const cutoff = rangeDays ? Date.now() - rangeDays * 86400000 : 0;
+  const datasets = mats.map((m, i) => ({
+    label: m.name,
+    data: m.points.filter(p => p[0].getTime() >= cutoff).map(p => ({ x: fmtDate(p[0]), y: p[1] })),
+    borderColor: PALETTE[i % PALETTE.length],
+    backgroundColor: PALETTE[i % PALETTE.length] + "33",
+    hidden: hiddenMats.has(m.name),
+    tension: .25, pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, spanGaps: true
+  }));
+  const ctx = document.getElementById("trendChart");
+  if(!ctx) return;
+  if(chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: "line",
+    data: { datasets },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: "nearest", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ΔE ${c.parsed.y.toFixed(2)} (${STATUS_LABEL[statusOf(c.parsed.y)]})` } }
+      },
+      scales: {
+        x: { type: "category", ticks: { maxTicksLimit: 14, font: { size: 10 }, maxRotation: 35 }, grid: { color: "#f0f0f0" } },
+        y: { beginAtZero: true, suggestedMax: 5,
+             title: { display: true, text: "Max Total ΔE", font: { size: 11 } },
+             ticks: { font: { size: 10 } }, grid: { color: "#f0f0f0" } }
+      }
+    },
+    plugins: [{
+      id: "thresholds",
+      afterDraw(c){
+        const { ctx, chartArea, scales } = c;
+        if(!chartArea) return;
+        [[3, "#d98a00"], [4, "#d93838"], [10, "#8e1616"]].forEach(([v, col]) => {
+          if(v > scales.y.max) return;
+          const y = scales.y.getPixelForValue(v);
+          ctx.save(); ctx.strokeStyle = col; ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(chartArea.left, y); ctx.lineTo(chartArea.right, y); ctx.stroke();
+          ctx.fillStyle = col; ctx.font = "10px sans-serif";
+          ctx.fillText("ΔE " + v, chartArea.right - 34, y - 4); ctx.restore();
+        });
+      }
+    }]
+  });
+}
+</script>
+</body>
+</html>
