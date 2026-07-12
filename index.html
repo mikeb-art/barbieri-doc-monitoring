@@ -86,6 +86,21 @@
   .mtog .sw{width:10px;height:10px;border-radius:50%}
   .mtog.off{opacity:.4}
 
+  /* ---------- Trends view ---------- */
+  .trend-grid{display:grid;grid-template-columns:250px 1fr;gap:18px;align-items:start}
+  .tmat-body{padding:12px 14px;max-height:calc(100vh - 330px);overflow-y:auto}
+  .tmat-actions{display:flex;gap:8px;margin-bottom:8px}
+  .tmat-actions .pill{flex:1;text-align:center;padding:4px 8px;font-size:12px}
+  .tmach{font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#3d5a80;background:#eef3f9;border-radius:6px;padding:5px 9px;margin:10px 0 4px;cursor:pointer;user-select:none}
+  .tmach:hover{background:#dfe9f4}
+  .tmach .hint{float:right;font-weight:400;letter-spacing:0;text-transform:none;color:#8aa2bf;font-size:10px}
+  .tmat{display:flex;align-items:center;gap:8px;padding:4px 6px;font-size:12.5px;cursor:pointer;border-radius:5px;line-height:1.3}
+  .tmat:hover{background:#f5f8fc}
+  .tmat .sw{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .tsep{width:1px;height:22px;background:#d3deeb;margin:0 4px}
+  .tsel{border:1px solid #d3deeb;border-radius:20px;padding:5px 12px;font-size:12.5px;color:#3d5a80;background:#fff;cursor:pointer}
+  @media (max-width:900px){ .trend-grid{grid-template-columns:1fr} }
+
   .empty{padding:56px 20px;text-align:center;color:#7d97b6;font-size:15px}
   .empty .ei{font-size:26px;margin-bottom:8px}
 
@@ -106,6 +121,7 @@
   <div class="app-title">BARBIERI DOC</div>
   <div class="nav-label">Views</div>
   <div class="nav-item active" data-loc="ALL" onclick="selectLoc('ALL')"><span class="ico">📊</span> Dashboard</div>
+  <div class="nav-item" data-loc="TRENDS" onclick="selectLoc('TRENDS')"><span class="ico">📈</span> ΔE Trends</div>
   <div class="nav-label loc">Locations</div>
   <div class="nav-item" data-loc="CA" onclick="selectLoc('CA')"><span class="ico">☀️</span> California <span class="cnt" id="cntCA">–</span></div>
   <div class="nav-item" data-loc="MX" onclick="selectLoc('MX')"><span class="ico">🌵</span> Mexico <span class="cnt" id="cntMX">–</span></div>
@@ -303,7 +319,9 @@ function selectLoc(loc){
   currentLoc = loc;
   localStorage.setItem("bdoc_loc", loc);
   document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.loc === loc));
-  document.getElementById("pageTitle").innerHTML = loc === "ALL" ? "🎯 Barbieri DOC Monitoring" : "🎯 " + LOC_NAMES[loc];
+  document.getElementById("pageTitle").innerHTML =
+    loc === "ALL" ? "🎯 Barbieri DOC Monitoring" :
+    loc === "TRENDS" ? "📈 ΔE Trends" : "🎯 " + LOC_NAMES[loc];
   if(!user){ return; }
   render();
 }
@@ -337,6 +355,7 @@ function readingsTable(loc){
 
 function render(){
   const el = document.getElementById("content");
+  if(currentLoc === "TRENDS"){ renderTrends(); return; }
   if(currentLoc === "ALL"){
     const total = { ok:0, warn:0, oot:0, crit:0, mats:0 };
     ["CA","MX","PA"].forEach(l => { const c = locCounts(l); Object.keys(total).forEach(k => total[k] += c[k]); });
@@ -367,7 +386,7 @@ function render(){
   }
 }
 
-/* ============ TREND CHART ============ */
+/* ============ TREND CHART (location pages) ============ */
 let hiddenMats = new Set();
 
 function buildToggles(){
@@ -420,22 +439,246 @@ function drawChart(){
              ticks: { font: { size: 10 } }, grid: { color: "#f0f0f0" } }
       }
     },
-    plugins: [{
-      id: "thresholds",
-      afterDraw(c){
-        const { ctx, chartArea, scales } = c;
-        if(!chartArea) return;
-        [[3, "#d98a00"], [4, "#d93838"], [10, "#8e1616"]].forEach(([v, col]) => {
-          if(v > scales.y.max) return;
-          const y = scales.y.getPixelForValue(v);
-          ctx.save(); ctx.strokeStyle = col; ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(chartArea.left, y); ctx.lineTo(chartArea.right, y); ctx.stroke();
-          ctx.fillStyle = col; ctx.font = "10px sans-serif";
-          ctx.fillText("ΔE " + v, chartArea.right - 34, y - 4); ctx.restore();
-        });
-      }
-    }]
+    plugins: [THRESHOLD_PLUGIN]
   });
+}
+
+/* Shared threshold-lines plugin */
+const THRESHOLD_PLUGIN = {
+  id: "thresholds",
+  afterDraw(c){
+    const { ctx, chartArea, scales } = c;
+    if(!chartArea) return;
+    [[3, "#d98a00"], [4, "#d93838"], [10, "#8e1616"]].forEach(([v, col]) => {
+      if(v > scales.y.max) return;
+      const y = scales.y.getPixelForValue(v);
+      ctx.save(); ctx.strokeStyle = col; ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(chartArea.left, y); ctx.lineTo(chartArea.right, y); ctx.stroke();
+      ctx.fillStyle = col; ctx.font = "10px sans-serif";
+      ctx.fillText("ΔE " + v, chartArea.right - 34, y - 4); ctx.restore();
+    });
+  }
+};
+
+/* ============ ΔE TRENDS VIEW ============ */
+let tLoc = localStorage.getItem("bdoc_tloc") || "CA";
+let tRange = +(localStorage.getItem("bdoc_trange") || 180);
+let tMachine = "ALL";
+let tVis = {};          // material name -> visible
+let tShowTrend = true;  // dashed regression trendlines
+let tChart = null;
+
+const MACHINE_PREFIXES = [
+  "Durst 325-1","Durst 325-2","Durst 325",
+  "Rhotex 325-1","Rhotex 325-2","Rhotex 325",
+  "P5-Tex-1","P5-Tex-2","P5-Tex","P5-350","Vutek 3r"
+];
+function machineOf(name){
+  const n = String(name).toLowerCase();
+  for(const p of MACHINE_PREFIXES){ if(n.startsWith(p.toLowerCase())) return p; }
+  const m = String(name).match(/\b(\d{3}-\d)\b/);   // e.g. "Stretch 325-1" → machine 325-1
+  if(m) return m[1];
+  return "Other";
+}
+
+function renderTrends(){
+  document.getElementById("content").innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><h2>Controls</h2>
+        ${["CA","MX","PA"].map(l => `<button class="pill ${tLoc === l ? "on" : ""}" data-tloc="${l}" onclick="tSetLoc('${l}')">${LOC_NAMES[l]}</button>`).join("")}
+        <span class="tsep"></span>
+        ${[[28,"4 wk"],[90,"3 mo"],[180,"6 mo"],[365,"1 yr"],[0,"All"]].map(([d,t]) => `<button class="pill ${tRange === d ? "on" : ""}" data-trange="${d}" onclick="tSetRange(${d})">${t}</button>`).join("")}
+        <span class="tsep"></span>
+        <select id="tMachineSel" class="tsel" onchange="tSetMachine(this.value)"></select>
+        <button class="pill ${tShowTrend ? "on" : ""}" id="tTrendBtn" onclick="tToggleTrend()">Trendlines</button>
+      </div>
+    </div>
+    <div class="trend-grid">
+      <div class="panel">
+        <div class="panel-head"><h2>Materials</h2></div>
+        <div class="tmat-body">
+          <div class="tmat-actions">
+            <button class="pill" onclick="tAll(true)">All</button>
+            <button class="pill" onclick="tAll(false)">None</button>
+          </div>
+          <div id="tMatList"></div>
+        </div>
+      </div>
+      <div>
+        <div class="panel">
+          <div class="panel-head"><h2 id="tChartTitle">ΔE Trend</h2><span class="ago" id="tChartSub"></span></div>
+          <div class="chart-wrap"><canvas id="tCanvas"></canvas></div>
+        </div>
+        <div id="tStats"></div>
+      </div>
+    </div>`;
+  tRefresh();
+}
+
+function tGroups(){
+  const all = DATA[tLoc]?.materials || [];
+  const groups = {};
+  all.forEach((m, i) => {
+    const mc = machineOf(m.name);
+    (groups[mc] = groups[mc] || []).push({ m, i });
+  });
+  return groups;
+}
+function tShownMats(){
+  const all = DATA[tLoc]?.materials || [];
+  return all.map((m, i) => ({ m, i }))
+    .filter(({ m }) => tMachine === "ALL" || machineOf(m.name) === tMachine);
+}
+function tFilterPts(m){
+  const cutoff = tRange ? Date.now() - tRange * 86400000 : 0;
+  return m.points.filter(p => p[0].getTime() >= cutoff);
+}
+
+function tBuildList(){
+  const groups = tGroups();
+  const machines = Object.keys(groups).sort((a, b) => (a === "Other") - (b === "Other") || a.localeCompare(b));
+
+  // machine dropdown
+  const sel = document.getElementById("tMachineSel");
+  sel.innerHTML = `<option value="ALL">All machines</option>` +
+    machines.map(mc => `<option value="${mc}" ${tMachine === mc ? "selected" : ""}>${mc} (${groups[mc].length})</option>`).join("");
+
+  // grouped material checklist
+  const show = machines.filter(mc => tMachine === "ALL" || mc === tMachine);
+  document.getElementById("tMatList").innerHTML = show.map(mc =>
+    `<div class="tmach" onclick="tToggleMachine('${mc}')">${mc}<span class="hint">toggle</span></div>` +
+    groups[mc].map(({ m, i }) => {
+      if(!(m.name in tVis)) tVis[m.name] = true;
+      return `<label class="tmat">
+        <span class="sw" style="background:${PALETTE[i % PALETTE.length]}"></span>
+        <input type="checkbox" ${tVis[m.name] ? "checked" : ""} onchange="tCheck(${i}, this.checked)">
+        <span>${m.name}</span>
+      </label>`;
+    }).join("")
+  ).join("");
+}
+
+function tLinearTrend(labels, values){
+  const pairs = labels.map((l, i) => [i, values[i]]).filter(p => p[1] !== null && p[1] !== undefined);
+  if(pairs.length < 2) return labels.map(() => null);
+  const n = pairs.length;
+  const mx = pairs.reduce((s, p) => s + p[0], 0) / n;
+  const my = pairs.reduce((s, p) => s + p[1], 0) / n;
+  const num = pairs.reduce((s, p) => s + (p[0] - mx) * (p[1] - my), 0);
+  const den = pairs.reduce((s, p) => s + (p[0] - mx) ** 2, 0);
+  const slope = den ? num / den : 0;
+  const intercept = my - slope * mx;
+  return labels.map((_, i) => +Math.max(0, slope * i + intercept).toFixed(3));
+}
+
+function tDraw(){
+  const shown = tShownMats();
+
+  // union of dates across visible, machine-filtered materials
+  const dateSet = new Set();
+  shown.forEach(({ m }) => { if(tVis[m.name] !== false) tFilterPts(m).forEach(p => dateSet.add(fmtDate(p[0]))); });
+  const labels = Array.from(dateSet).sort();
+
+  const datasets = [];
+  shown.forEach(({ m, i }) => {
+    if(tVis[m.name] === false) return;
+    const pts = tFilterPts(m);
+    if(!pts.length) return;
+    const color = PALETTE[i % PALETTE.length];
+    const lookup = {};
+    pts.forEach(p => lookup[fmtDate(p[0])] = p[1]);
+    const values = labels.map(l => lookup[l] !== undefined ? lookup[l] : null);
+    datasets.push({
+      label: m.name, data: values,
+      borderColor: color, backgroundColor: color + "33",
+      borderWidth: 2, pointRadius: values.map(v => v !== null ? 3 : 0), pointHoverRadius: 5,
+      tension: .25, spanGaps: true, _trend: false
+    });
+    if(tShowTrend){
+      datasets.push({
+        label: m.name + " trend", data: tLinearTrend(labels, values),
+        borderColor: color, borderWidth: 1.4, borderDash: [5, 4],
+        pointRadius: 0, tension: 0, spanGaps: true, _trend: true
+      });
+    }
+  });
+
+  const ctx = document.getElementById("tCanvas");
+  if(!ctx) return;
+  if(tChart) tChart.destroy();
+  tChart = new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          filter: item => !item.dataset._trend && item.parsed.y !== null,
+          callbacks: { label: c => ` ${c.dataset.label}: ΔE ${c.parsed.y.toFixed(2)} (${STATUS_LABEL[statusOf(c.parsed.y)]})` }
+        }
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 14, font: { size: 10 }, maxRotation: 35 }, grid: { color: "#f0f0f0" } },
+        y: { beginAtZero: true, suggestedMax: 5,
+             title: { display: true, text: "Max Total ΔE", font: { size: 11 } },
+             ticks: { font: { size: 10 } }, grid: { color: "#f0f0f0" } }
+      }
+    },
+    plugins: [THRESHOLD_PLUGIN]
+  });
+
+  // stats over machine-filtered materials (latest value within range)
+  const c = { ok:0, warn:0, oot:0, crit:0, mats:0 };
+  shown.forEach(({ m }) => {
+    const pts = tFilterPts(m);
+    if(!pts.length) return;
+    c[statusOf(pts[pts.length - 1][1])]++; c.mats++;
+  });
+  document.getElementById("tStats").innerHTML = statCards(c);
+
+  const visCount = shown.filter(({ m }) => tVis[m.name] !== false).length;
+  document.getElementById("tChartTitle").textContent =
+    `${LOC_NAMES[tLoc]} — ΔE Trends${tMachine !== "ALL" ? " · " + tMachine : ""}`;
+  document.getElementById("tChartSub").textContent =
+    `${visCount} of ${shown.length} materials · ${tRange ? "last " + tRange + " days" : "all time"}`;
+}
+
+function tRefresh(){ tBuildList(); tDraw(); }
+
+function tSetLoc(l){
+  tLoc = l; tVis = {}; tMachine = "ALL";
+  localStorage.setItem("bdoc_tloc", l);
+  document.querySelectorAll(".pill[data-tloc]").forEach(p => p.classList.toggle("on", p.dataset.tloc === l));
+  tRefresh();
+}
+function tSetRange(d){
+  tRange = d;
+  localStorage.setItem("bdoc_trange", d);
+  document.querySelectorAll(".pill[data-trange]").forEach(p => p.classList.toggle("on", +p.dataset.trange === d));
+  tDraw();
+}
+function tSetMachine(mc){ tMachine = mc; tRefresh(); }
+function tToggleTrend(){
+  tShowTrend = !tShowTrend;
+  document.getElementById("tTrendBtn").classList.toggle("on", tShowTrend);
+  tDraw();
+}
+function tCheck(i, on){
+  const m = (DATA[tLoc]?.materials || [])[i];
+  if(m){ tVis[m.name] = on; tDraw(); }
+}
+function tToggleMachine(mc){
+  const groups = tGroups();
+  const mats = (groups[mc] || []).map(({ m }) => m.name);
+  const anyOff = mats.some(n => tVis[n] === false);
+  mats.forEach(n => tVis[n] = anyOff);
+  tRefresh();
+}
+function tAll(on){
+  tShownMats().forEach(({ m }) => tVis[m.name] = on);
+  tRefresh();
 }
 </script>
 </body>
