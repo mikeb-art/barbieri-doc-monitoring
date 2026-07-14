@@ -386,6 +386,10 @@ function render(){
           <button class="pill" data-range="365" onclick="setRange(365)">1 yr</button>
           <button class="pill" data-range="0" onclick="setRange(0)">All</button>
         </div>
+        <div style="display:flex;gap:8px;padding:12px 18px 0">
+          <button class="pill" onclick="matAll(true)">All</button>
+          <button class="pill" onclick="matAll(false)">None</button>
+        </div>
         <div class="mat-toggles" id="matToggles"></div>
         <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
       </div>`;
@@ -406,6 +410,12 @@ function buildToggles(){
 }
 function toggleMat(name){
   hiddenMats.has(name) ? hiddenMats.delete(name) : hiddenMats.add(name);
+  buildToggles(); drawChart();
+}
+function matAll(show){
+  const mats = DATA[currentLoc]?.materials || [];
+  if(show){ hiddenMats.clear(); }
+  else { mats.forEach(m => hiddenMats.add(m.name)); }
   buildToggles(); drawChart();
 }
 let rangeDays = 180;
