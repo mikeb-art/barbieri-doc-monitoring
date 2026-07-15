@@ -192,8 +192,15 @@ function initAuth(){
       user = { name: info.name || info.email, email: info.email };
       updateUserUI();
       loadAll();
+    },
+    error_callback: (err) => {
+      // Silent sign-in couldn't complete without interaction — leave the gate visible.
+      // The user can sign in manually via the button (which uses a user gesture).
     }
   });
+  // Attempt a silent sign-in so returning users with an active Google session
+  // aren't prompted on every visit (matches the other WS Display dashboards).
+  try { tokenClient.requestAccessToken({ prompt: "none" }); } catch(e){}
 }
 window.addEventListener("load", initAuth);
 
