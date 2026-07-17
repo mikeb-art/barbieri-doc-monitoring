@@ -125,6 +125,7 @@
   <div class="nav-label">Views</div>
   <div class="nav-item active" data-loc="ALL" onclick="selectLoc('ALL')"><span class="ico">📊</span> Dashboard</div>
   <div class="nav-item" data-loc="TRENDS" onclick="selectLoc('TRENDS')"><span class="ico">📈</span> ΔE Trends</div>
+  <div class="nav-item" data-loc="BACKLIT" onclick="selectLoc('BACKLIT')"><span class="ico">💡</span> P5-Tex Backlit (1 yr)</div>
   <div class="nav-label loc">Locations</div>
   <div class="nav-item" data-loc="CA" onclick="selectLoc('CA')"><span class="ico">☀️</span> California <span class="cnt" id="cntCA">–</span></div>
   <div class="nav-item" data-loc="MX" onclick="selectLoc('MX')"><span class="ico">🌵</span> Mexico <span class="cnt" id="cntMX">–</span></div>
@@ -336,7 +337,8 @@ function selectLoc(loc){
   document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.loc === loc));
   document.getElementById("pageTitle").innerHTML =
     loc === "ALL" ? "🎯 Barbieri DOC Monitoring" :
-    loc === "TRENDS" ? "📈 ΔE Trends" : "🎯 " + LOC_NAMES[loc];
+    loc === "TRENDS" ? "📈 ΔE Trends" :
+    loc === "BACKLIT" ? "💡 P5-Tex Backlit — 1-Year Comparison" : "🎯 " + LOC_NAMES[loc];
   if(!user){ return; }
   render();
 }
@@ -371,6 +373,7 @@ function readingsTable(loc){
 function render(){
   const el = document.getElementById("content");
   if(currentLoc === "TRENDS"){ renderTrends(); return; }
+  if(currentLoc === "BACKLIT"){ renderBacklit(); return; }
   if(currentLoc === "ALL"){
     const total = { ok:0, warn:0, oot:0, crit:0, mats:0 };
     ["CA","MX","PA"].forEach(l => { const c = locCounts(l); Object.keys(total).forEach(k => total[k] += c[k]); });
@@ -484,6 +487,125 @@ const THRESHOLD_PLUGIN = {
     });
   }
 };
+
+/* ============ P5-TEX BACKLIT 1-YEAR COMPARISON VIEW ============ */
+let backlitExclOutliers = (localStorage.getItem("bdoc_backlit_excl") === "1");
+
+function backlitSeriesFor(loc){
+  const mats = DATA[loc]?.materials || [];
+  return mats.find(x => /p5-?tex/i.test(x.name) && /backlit/i.test(x.name) && !/film/i.test(x.name)) || null;
+}
+
+function backlitStats(){
+  const cutoff = Date.now() - 365 * 86400000;
+  const out = {};
+  ["CA","MX","PA"].forEach(loc => {
+    const m = backlitSeriesFor(loc);
+    let vals = [], excluded = 0;
+    if(m){
+      const inWindow = m.points.filter(p => p[0].getTime() >= cutoff).map(p => p[1]);
+      excluded = inWindow.filter(v => v >= 10).length;
+      vals = backlitExclOutliers ? inWindow.filter(v => v < 10) : inWindow;
+    }
+    out[loc] = vals.length
+      ? { n: vals.length, avg: vals.reduce((a,b)=>a+b,0)/vals.length, min: Math.min(...vals), max: Math.max(...vals), excluded, material: m ? m.name : "" }
+      : { n: 0, avg: null, min: null, max: null, excluded, material: m ? m.name : "" };
+  });
+  return out;
+}
+
+function renderBacklit(){
+  const stats = backlitStats();
+  window._backlitStats = stats;
+  const locs = ["CA","MX","PA"];
+  const totalExcluded = locs.reduce((a,l) => a + stats[l].excluded, 0);
+  const cards = locs.map(loc => {
+    const s = stats[loc];
+    if(s.avg === null) return `<div class="stat mats"><div class="lbl">${LOC_NAMES[loc]}</div><div class="val">—</div></div>`;
+    const st = statusOf(s.avg);
+    return `<div class="stat ${st}"><div class="lbl">${LOC_NAMES[loc]} · avg ΔE</div><div class="val">${s.avg.toFixed(2)}</div>
+      <div style="font-size:11.5px;color:var(--muted);margin-top:4px">${s.n} readings · range ${s.min.toFixed(2)}–${s.max.toFixed(2)}</div></div>`;
+  }).join("");
+  document.getElementById("content").innerHTML = `
+    <div class="stats">${cards}</div>
+    <div class="panel">
+      <div class="panel-head"><h2>P5-Tex Backlit — average ΔE over last 12 months</h2>
+        <button class="pill ${backlitExclOutliers ? "on" : ""}" onclick="toggleBacklitOutliers()">Exclude critical outliers (ΔE ≥ 10)${totalExcluded ? " · " + totalExcluded : ""}</button>
+      </div>
+      <div class="chart-wrap"><canvas id="backlitChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>About this view</h2></div>
+      <div style="padding:14px 18px;font-size:13.5px;color:#3d5a80;line-height:1.65">
+        Bars show the mean Max Total ΔE for P5-Tex Backlit at each location over the trailing 365 days; whiskers show the min–max range of individual readings. Dashed lines mark the Warning (3.0) and Out-of-Tolerance (4.0) thresholds.
+        ${backlitExclOutliers
+          ? (totalExcluded ? ` Currently excluding ${totalExcluded} critical reading(s) ≥ 10 ΔE.` : " No critical readings ≥ 10 in the window.")
+          : " Use the toggle above to exclude critical spikes (e.g. Mexico's late-May cluster of ~15 ΔE)."}
+      </div>
+    </div>`;
+  drawBacklitChart();
+}
+
+function toggleBacklitOutliers(){
+  backlitExclOutliers = !backlitExclOutliers;
+  localStorage.setItem("bdoc_backlit_excl", backlitExclOutliers ? "1" : "0");
+  renderBacklit();
+}
+
+function drawBacklitChart(){
+  const stats = window._backlitStats, locs = ["CA","MX","PA"];
+  const labels = locs.map(l => LOC_NAMES[l]);
+  const data = locs.map(l => stats[l].avg);
+  const ranges = locs.map(l => [stats[l].min, stats[l].max]);
+  const ctx = document.getElementById("backlitChart");
+  if(!ctx) return;
+  if(chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Avg ΔE", data, backgroundColor: "#1f6fd6", borderRadius: 4, maxBarThickness: 90 }] },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => {
+          const r = ranges[c.dataIndex];
+          return c.parsed.y == null ? " No readings"
+            : ` Avg ΔE ${c.parsed.y.toFixed(2)}` + (r[0] != null ? `  (range ${r[0].toFixed(2)}–${r[1].toFixed(2)})` : "");
+        } } }
+      },
+      scales: {
+        y: { beginAtZero: true, suggestedMax: 6.5, title: { display: true, text: "Max Total ΔE", font: { size: 11 } }, ticks: { font: { size: 10 } }, grid: { color: "#f0f0f0" } },
+        x: { grid: { display: false }, ticks: { font: { size: 12 } } }
+      }
+    },
+    plugins: [{
+      id: "backlitExtras",
+      afterDatasetsDraw(c){
+        const { ctx, chartArea, scales } = c;
+        if(!chartArea) return;
+        [[3, "#d98a00"], [4, "#d93838"]].forEach(([v, col]) => {
+          if(v > scales.y.max) return;
+          const y = scales.y.getPixelForValue(v);
+          ctx.save(); ctx.strokeStyle = col; ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(chartArea.left, y); ctx.lineTo(chartArea.right, y); ctx.stroke();
+          ctx.fillStyle = col; ctx.font = "10px sans-serif"; ctx.fillText("ΔE " + v, chartArea.right - 34, y - 4); ctx.restore();
+        });
+        ranges.forEach((r, i) => {
+          if(r[0] == null) return;
+          const bar = c.getDatasetMeta(0).data[i];
+          if(!bar) return;
+          const cx = bar.x, yl = scales.y.getPixelForValue(r[0]), yh = scales.y.getPixelForValue(r[1]);
+          ctx.save(); ctx.strokeStyle = "#33475f"; ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(cx, yh); ctx.lineTo(cx, yl);
+          ctx.moveTo(cx - 8, yh); ctx.lineTo(cx + 8, yh);
+          ctx.moveTo(cx - 8, yl); ctx.lineTo(cx + 8, yl);
+          ctx.stroke(); ctx.restore();
+        });
+      }
+    }]
+  });
+}
 
 /* ============ ΔE TRENDS VIEW ============ */
 let tLoc = localStorage.getItem("bdoc_tloc") || "CA";
