@@ -126,6 +126,7 @@
   <div class="nav-item active" data-loc="ALL" onclick="selectLoc('ALL')"><span class="ico">📊</span> Dashboard</div>
   <div class="nav-item" data-loc="TRENDS" onclick="selectLoc('TRENDS')"><span class="ico">📈</span> ΔE Trends</div>
   <div class="nav-item" data-loc="BACKLIT" onclick="selectLoc('BACKLIT')"><span class="ico">💡</span> P5-Tex Backlit (1 yr)</div>
+  <div class="nav-item" data-loc="MACHINE" onclick="showMachineView()"><span class="ico">🖨️</span> By Machine</div>
   <div class="nav-label loc">Locations</div>
   <div class="nav-item" data-loc="CA" onclick="selectLoc('CA')"><span class="ico">☀️</span> California <span class="cnt" id="cntCA">–</span></div>
   <div class="nav-item" data-loc="MX" onclick="selectLoc('MX')"><span class="ico">🌵</span> Mexico <span class="cnt" id="cntMX">–</span></div>
@@ -827,6 +828,109 @@ function tAll(on){
   tShownMats().forEach(({ m }) => tVis[m.name] = on);
   tRefresh();
 }
+</script>
+<script>/* ===== By Machine add-on (self-contained, appended after WS Display app code) ===== */
+(function(){
+  const MACHINE_RULES = [
+    // 325 with or without a Durst/Rhotex/D prefix, any word order (e.g. "325-2 Stretch", "Stretch 325-2", "D325-2")
+    [/\b(?:rhotex\s*|durst\s*|d)?325\s*-?\s*1\b/i, "Durst Rhotex 325-1"],
+    [/\b(?:rhotex\s*|durst\s*|d)?325\s*-?\s*2\b/i, "Durst Rhotex 325-2"],
+    [/\b(?:rhotex\s*|durst\s*|d)?325\b/i, "Durst Rhotex 325"],
+    [/p5-?tex-?\s*1/i, "Durst P5-Tex #1"],
+    [/p5-?tex-?\s*2/i, "Durst P5-Tex #2"],
+    [/p5-?tex/i, "Durst P5-Tex"],
+    [/p5-?350/i, "Durst P5-350"],
+    [/vutek\s*3r|(?:^|\s)3r(?:\s|$)/i, "EFI Vutek 3r"]
+  ];
+  function machineOf(name){ for(const [re,c] of MACHINE_RULES) if(re.test(name)) return c; return "Other"; }
+  function modelOf(m){ return m.replace(/\s*#\d+$/,"").replace(/(325)\s*-\s*[12]$/,"$1").trim(); }
+  const SC = { ok:"var(--green)", warn:"var(--amber)", oot:"var(--red)", crit:"var(--crit)" };
+  const LOCN = { CA:"California", MX:"Mexico", PA:"Pennsylvania" };
+
+  // {loc: {machine: [materialObj,...]}}
+  function buildIdx(){
+    const idx = {};
+    ["CA","MX","PA"].forEach(loc => {
+      const mats = (window.DATA && DATA[loc] && DATA[loc].materials) || [];
+      mats.forEach(m => {
+        const mac = machineOf(m.name);
+        (idx[loc] = idx[loc] || {});
+        (idx[loc][mac] = idx[loc][mac] || []).push(m);
+      });
+    });
+    return idx;
+  }
+  // worst latest ΔE across a list of materials
+  function worstLatest(mats){
+    let w = -1;
+    mats.forEach(m => { const l = latest(m); if(l && l[1] > w) w = l[1]; });
+    return w;
+  }
+
+  window.showMachineView = function(){
+    document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.loc === "MACHINE"));
+    const title = document.getElementById("pageTitle");
+    const sub = document.getElementById("pageSub");
+    if(title) title.innerHTML = "🖨️ By Machine";
+    if(sub) sub.textContent = "Same machine model compared across locations — spot the site running hot. Machines at only one location are listed separately (not comparable).";
+    const el = document.getElementById("content");
+    if(!el) return;
+    if(!window.DATA || !Object.keys(DATA).length){
+      el.innerHTML = '<div class="gate"><div class="big">🖨️</div><h2>By Machine</h2><p>Sign in to load ΔE data.</p></div>';
+      return;
+    }
+    const idx = buildIdx();
+    // group machines by model, tracking which locations each model appears in
+    const models = {}; // model -> {loc -> worstΔE}
+    const singles = []; // machines present at only one location
+    const modelLocs = {}; // model -> Set(loc)
+    ["CA","MX","PA"].forEach(loc => Object.keys(idx[loc]||{}).forEach(mac => {
+      if(mac === "Other") return;
+      const model = modelOf(mac);
+      (modelLocs[model] = modelLocs[model] || new Set()).add(loc);
+      const w = worstLatest(idx[loc][mac]);
+      models[model] = models[model] || {};
+      models[model][loc] = Math.max(models[model][loc] ?? -1, w);
+    }));
+    // split comparable (>=2 locations) vs single-location
+    const comparable = Object.keys(models).filter(md => modelLocs[md].size >= 2).sort();
+    const singleModels = Object.keys(models).filter(md => modelLocs[md].size < 2).sort();
+
+    const rowFor = md => {
+      const cells = ["CA","MX","PA"].map(loc => {
+        const v = models[md][loc];
+        if(v === undefined || v < 0) return '<td style="text-align:center;color:#b8c4d6">—</td>';
+        const st = statusOf(v);
+        return `<td style="text-align:center;font-weight:800;color:${SC[st]}">${v.toFixed(2)}</td>`;
+      }).join("");
+      return `<tr><td class="mat-name">${md}</td>${cells}</tr>`;
+    };
+
+    let html = `<div class="panel">
+      <div class="panel-head"><h2>Cross-location comparison</h2>
+        <span class="ago">Worst-material ΔE per machine model · only models run at 2+ locations</span></div>`;
+    if(comparable.length){
+      html += `<table><thead><tr><th>Machine model</th>
+        <th style="text-align:center">California</th><th style="text-align:center">Mexico</th><th style="text-align:center">Pennsylvania</th>
+        </tr></thead><tbody>${comparable.map(rowFor).join("")}</tbody></table>`;
+    } else {
+      html += '<div class="empty"><div class="ei">📭</div>No models are run at more than one location yet.</div>';
+    }
+    html += `</div>`;
+
+    if(singleModels.length){
+      const items = singleModels.map(md => {
+        const loc = [...modelLocs[md]][0];
+        const v = models[md][loc];
+        return `<li><b>${md}</b> — ${LOCN[loc]} only${v>=0?` (ΔE ${v.toFixed(2)})`:""}</li>`;
+      }).join("");
+      html += `<div class="panel"><div class="panel-head"><h2>Single-location machines</h2>
+        <span class="ago">Excluded from the comparison — only one site runs them</span></div>
+        <div style="padding:12px 22px"><ul style="margin:0;padding-left:18px;line-height:1.9;font-size:13.5px">${items}</ul></div></div>`;
+    }
+    el.innerHTML = html;
+  };
+})();
 </script>
 </body>
 </html>
