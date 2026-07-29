@@ -844,27 +844,50 @@ function tAll(on){
   ];
   function machineOf(name){ for(const [re,c] of MACHINE_RULES) if(re.test(name)) return c; return "Other"; }
   function modelOf(m){ return m.replace(/\s*#\d+$/,"").replace(/(325)\s*-\s*[12]$/,"$1").trim(); }
+  function materialOf(name, loc){
+    let s = name.replace(new RegExp("^\\s*"+loc+"\\s+","i"), "");
+    for(const [re] of MACHINE_RULES) s = s.replace(re, "");
+    return s.replace(/\s+/g," ").trim();
+  }
+  function shortUnit(machine){ return machine.replace(/^Durst Rhotex /,"").replace(/^Durst /,"").replace(/^EFI /,""); }
   const SC = { ok:"var(--green)", warn:"var(--amber)", oot:"var(--red)", crit:"var(--crit)" };
   const LOCN = { CA:"California", MX:"Mexico", PA:"Pennsylvania" };
+  function matsFor(loc){ return (typeof DATA !== "undefined" && DATA[loc] && DATA[loc].materials) || []; }
 
   // {loc: {machine: [materialObj,...]}}
   function buildIdx(){
     const idx = {};
-    ["CA","MX","PA"].forEach(loc => {
-      const mats = (typeof DATA !== "undefined" && DATA[loc] && DATA[loc].materials) || [];
-      mats.forEach(m => {
-        const mac = machineOf(m.name);
-        (idx[loc] = idx[loc] || {});
-        (idx[loc][mac] = idx[loc][mac] || []).push(m);
-      });
-    });
+    ["CA","MX","PA"].forEach(loc => matsFor(loc).forEach(m => {
+      const mac = machineOf(m.name);
+      (idx[loc] = idx[loc] || {});
+      (idx[loc][mac] = idx[loc][mac] || []).push(m);
+    }));
     return idx;
   }
-  // worst latest ΔE across a list of materials
-  function worstLatest(mats){
-    let w = -1;
-    mats.forEach(m => { const l = latest(m); if(l && l[1] > w) w = l[1]; });
-    return w;
+  function worstLatest(mats){ let w = -1; mats.forEach(m => { const l = latest(m); if(l && l[1] > w) w = l[1]; }); return w; }
+
+  // {loc: {model: {units:{machine:1}, mats:{matKey:{label, vals:{machine:ΔE}}}}}}
+  function buildP2P(){
+    const out = {};
+    ["CA","MX","PA"].forEach(loc => matsFor(loc).forEach(m => {
+      const machine = machineOf(m.name); if(machine === "Other") return;
+      const material = materialOf(m.name, loc); if(!material) return;
+      const l = latest(m); if(!l) return;
+      const model = modelOf(machine);
+      const key = material.toLowerCase().replace(/\s+/g,"");
+      out[loc] = out[loc] || {};
+      const M = out[loc][model] = out[loc][model] || { units:{}, mats:{} };
+      M.units[machine] = 1;
+      const mm = M.mats[key] = M.mats[key] || { label: material, vals:{} };
+      mm.vals[machine] = Math.max(mm.vals[machine] ?? -1, l[1]);
+    }));
+    return out;
+  }
+
+  function cell(v){
+    if(v === undefined || v < 0) return '<td style="text-align:center;color:#b8c4d6">—</td>';
+    const st = statusOf(v);
+    return `<td style="text-align:center;font-weight:800;color:${SC[st]}">${v.toFixed(2)}</td>`;
   }
 
   window.showMachineView = function(){
@@ -872,18 +895,17 @@ function tAll(on){
     const title = document.getElementById("pageTitle");
     const sub = document.getElementById("pageSub");
     if(title) title.innerHTML = "🖨️ By Machine";
-    if(sub) sub.textContent = "Same machine model compared across locations — spot the site running hot. Machines at only one location are listed separately (not comparable).";
+    if(sub) sub.textContent = "Cross-location: same model across sites. Printer-to-printer: the two units of a model at one site, material by material.";
     const el = document.getElementById("content");
     if(!el) return;
     if(typeof DATA === "undefined" || !DATA || !Object.keys(DATA).length){
       el.innerHTML = '<div class="gate"><div class="big">🖨️</div><h2>By Machine</h2><p>Sign in to load ΔE data.</p></div>';
       return;
     }
+
+    // ---------- Cross-location comparison (same model, different sites) ----------
     const idx = buildIdx();
-    // group machines by model, tracking which locations each model appears in
-    const models = {}; // model -> {loc -> worstΔE}
-    const singles = []; // machines present at only one location
-    const modelLocs = {}; // model -> Set(loc)
+    const models = {}, modelLocs = {};
     ["CA","MX","PA"].forEach(loc => Object.keys(idx[loc]||{}).forEach(mac => {
       if(mac === "Other") return;
       const model = modelOf(mac);
@@ -892,32 +914,48 @@ function tAll(on){
       models[model] = models[model] || {};
       models[model][loc] = Math.max(models[model][loc] ?? -1, w);
     }));
-    // split comparable (>=2 locations) vs single-location
     const comparable = Object.keys(models).filter(md => modelLocs[md].size >= 2).sort();
     const singleModels = Object.keys(models).filter(md => modelLocs[md].size < 2).sort();
 
-    const rowFor = md => {
-      const cells = ["CA","MX","PA"].map(loc => {
-        const v = models[md][loc];
-        if(v === undefined || v < 0) return '<td style="text-align:center;color:#b8c4d6">—</td>';
-        const st = statusOf(v);
-        return `<td style="text-align:center;font-weight:800;color:${SC[st]}">${v.toFixed(2)}</td>`;
-      }).join("");
-      return `<tr><td class="mat-name">${md}</td>${cells}</tr>`;
-    };
-
-    let html = `<div class="panel">
-      <div class="panel-head"><h2>Cross-location comparison</h2>
-        <span class="ago">Worst-material ΔE per machine model · only models run at 2+ locations</span></div>`;
-    if(comparable.length){
-      html += `<table><thead><tr><th>Machine model</th>
-        <th style="text-align:center">California</th><th style="text-align:center">Mexico</th><th style="text-align:center">Pennsylvania</th>
-        </tr></thead><tbody>${comparable.map(rowFor).join("")}</tbody></table>`;
-    } else {
-      html += '<div class="empty"><div class="ei">📭</div>No models are run at more than one location yet.</div>';
-    }
+    const xrow = md => `<tr><td class="mat-name">${md}</td>${["CA","MX","PA"].map(loc => cell(models[md][loc])).join("")}</tr>`;
+    let html = `<div class="panel"><div class="panel-head"><h2>Cross-location comparison</h2>
+      <span class="ago">Worst-material ΔE per machine model · only models run at 2+ locations</span></div>`;
+    html += comparable.length
+      ? `<table><thead><tr><th>Machine model</th><th style="text-align:center">California</th><th style="text-align:center">Mexico</th><th style="text-align:center">Pennsylvania</th></tr></thead><tbody>${comparable.map(xrow).join("")}</tbody></table>`
+      : '<div class="empty"><div class="ei">📭</div>No models are run at more than one location yet.</div>';
     html += `</div>`;
 
+    // ---------- Printer-to-printer (same location, unit vs unit, per material) ----------
+    const p2p = buildP2P();
+    ["CA","MX","PA"].forEach(loc => {
+      const modelsAtLoc = p2p[loc] || {};
+      const blocks = [];
+      Object.keys(modelsAtLoc).sort().forEach(model => {
+        const M = modelsAtLoc[model];
+        const units = Object.keys(M.units).sort();
+        if(units.length < 2) return;
+        const matKeys = Object.keys(M.mats)
+          .filter(k => units.filter(u => M.mats[k].vals[u] !== undefined && M.mats[k].vals[u] >= 0).length >= 2)
+          .sort((a,b) => M.mats[a].label.localeCompare(M.mats[b].label));
+        if(!matKeys.length) return;
+        const head = `<tr><th>Material</th>${units.map(u => `<th style="text-align:center">${shortUnit(u)}</th>`).join("")}<th style="text-align:center">Δ units</th></tr>`;
+        const rows = matKeys.map(k => {
+          const present = units.map(u => M.mats[k].vals[u]).filter(v => v !== undefined && v >= 0);
+          const diff = present.length >= 2 ? (Math.max(...present) - Math.min(...present)) : null;
+          const cells = units.map(u => cell(M.mats[k].vals[u])).join("");
+          const dc = diff === null ? "#8aa2bf" : diff >= 3 ? "var(--red)" : diff >= 1.5 ? "var(--amber)" : "#8aa2bf";
+          const dcell = diff === null ? "<td></td>" : `<td style="text-align:center;font-weight:700;color:${dc}">${diff.toFixed(2)}</td>`;
+          return `<tr><td class="mat-name">${M.mats[k].label}</td>${cells}${dcell}</tr>`;
+        }).join("");
+        blocks.push(`<div style="font-weight:700;font-size:11px;color:#3d5a80;padding:12px 18px 2px;text-transform:uppercase;letter-spacing:.6px">${model}</div><table><thead>${head}</thead><tbody>${rows}</tbody></table>`);
+      });
+      if(blocks.length){
+        html += `<div class="panel"><div class="panel-head"><h2>${LOCN[loc]} — printer&#8209;to&#8209;printer</h2>
+          <span class="ago">Same material on each unit of a model · Δ = gap between the two printers</span></div>${blocks.join("")}</div>`;
+      }
+    });
+
+    // ---------- Single-location machines (not comparable) ----------
     if(singleModels.length){
       const items = singleModels.map(md => {
         const loc = [...modelLocs[md]][0];
@@ -925,9 +963,10 @@ function tAll(on){
         return `<li><b>${md}</b> — ${LOCN[loc]} only${v>=0?` (ΔE ${v.toFixed(2)})`:""}</li>`;
       }).join("");
       html += `<div class="panel"><div class="panel-head"><h2>Single-location machines</h2>
-        <span class="ago">Excluded from the comparison — only one site runs them</span></div>
+        <span class="ago">Excluded from the cross-location comparison — only one site runs them</span></div>
         <div style="padding:12px 22px"><ul style="margin:0;padding-left:18px;line-height:1.9;font-size:13.5px">${items}</ul></div></div>`;
     }
+
     el.innerHTML = html;
   };
 })();
