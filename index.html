@@ -938,7 +938,9 @@ function tAll(on){
           .filter(k => units.filter(u => M.mats[k].vals[u] !== undefined && M.mats[k].vals[u] >= 0).length >= 2)
           .sort((a,b) => M.mats[a].label.localeCompare(M.mats[b].label));
         if(!matKeys.length) return;
-        const head = `<tr><th>Material</th>${units.map(u => `<th style="text-align:center">${shortUnit(u)}</th>`).join("")}<th style="text-align:center">Δ units</th></tr>`;
+        // fixed, shared column widths so every model's table lines up vertically
+        const uW = (45 / units.length).toFixed(2);
+        const head = `<tr><th style="width:40%">Material</th>${units.map(u => `<th style="text-align:center;width:${uW}%">${shortUnit(u)}</th>`).join("")}<th style="text-align:center;width:15%">Δ units</th></tr>`;
         const rows = matKeys.map(k => {
           const present = units.map(u => M.mats[k].vals[u]).filter(v => v !== undefined && v >= 0);
           const diff = present.length >= 2 ? (Math.max(...present) - Math.min(...present)) : null;
@@ -947,25 +949,13 @@ function tAll(on){
           const dcell = diff === null ? "<td></td>" : `<td style="text-align:center;font-weight:700;color:${dc}">${diff.toFixed(2)}</td>`;
           return `<tr><td class="mat-name">${M.mats[k].label}</td>${cells}${dcell}</tr>`;
         }).join("");
-        blocks.push(`<div style="font-weight:700;font-size:11px;color:#3d5a80;padding:12px 18px 2px;text-transform:uppercase;letter-spacing:.6px">${model}</div><table><thead>${head}</thead><tbody>${rows}</tbody></table>`);
+        blocks.push(`<div style="font-weight:700;font-size:11px;color:#3d5a80;padding:12px 18px 2px;text-transform:uppercase;letter-spacing:.6px">${model}</div><table style="table-layout:fixed"><thead>${head}</thead><tbody>${rows}</tbody></table>`);
       });
       if(blocks.length){
         html += `<div class="panel"><div class="panel-head"><h2>${LOCN[loc]} — printer&#8209;to&#8209;printer</h2>
           <span class="ago">Same material on each unit of a model · Δ = gap between the two printers</span></div>${blocks.join("")}</div>`;
       }
     });
-
-    // ---------- Single-location machines (not comparable) ----------
-    if(singleModels.length){
-      const items = singleModels.map(md => {
-        const loc = [...modelLocs[md]][0];
-        const v = models[md][loc];
-        return `<li><b>${md}</b> — ${LOCN[loc]} only${v>=0?` (ΔE ${v.toFixed(2)})`:""}</li>`;
-      }).join("");
-      html += `<div class="panel"><div class="panel-head"><h2>Single-location machines</h2>
-        <span class="ago">Excluded from the cross-location comparison — only one site runs them</span></div>
-        <div style="padding:12px 22px"><ul style="margin:0;padding-left:18px;line-height:1.9;font-size:13.5px">${items}</ul></div></div>`;
-    }
 
     el.innerHTML = html;
   };
