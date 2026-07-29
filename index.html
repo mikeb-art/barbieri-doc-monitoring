@@ -833,23 +833,23 @@ function tAll(on){
 (function(){
   const MACHINE_RULES = [
     // 325 with or without a Durst/Rhotex/D prefix, any word order (e.g. "325-2 Stretch", "Stretch 325-2", "D325-2")
-    [/\b(?:rhotex\s*|durst\s*|d)?325\s*-?\s*1\b/i, "Durst Rhotex 325-1"],
-    [/\b(?:rhotex\s*|durst\s*|d)?325\s*-?\s*2\b/i, "Durst Rhotex 325-2"],
-    [/\b(?:rhotex\s*|durst\s*|d)?325\b/i, "Durst Rhotex 325"],
-    [/p5-?tex-?\s*1/i, "Durst P5-Tex #1"],
-    [/p5-?tex-?\s*2/i, "Durst P5-Tex #2"],
-    [/p5-?tex/i, "Durst P5-Tex"],
-    [/p5-?350/i, "Durst P5-350"],
-    [/vutek\s*3r|(?:^|\s)3r(?:\s|$)/i, "EFI Vutek 3r"]
+    [/\b(?:rhotex\s*|durst\s*|d)?325\s*-?\s*1\b/i, "D325-1"],
+    [/\b(?:rhotex\s*|durst\s*|d)?325\s*-?\s*2\b/i, "D325-2"],
+    [/\b(?:rhotex\s*|durst\s*|d)?325\b/i, "D325"],
+    [/p5-?tex-?\s*1/i, "P5-Tex-1"],
+    [/p5-?tex-?\s*2/i, "P5-Tex-2"],
+    [/p5-?tex/i, "P5-Tex"],
+    [/p5-?350/i, "P5-350"],
+    [/vutek\s*3r|(?:^|\s)3r(?:\s|$)/i, "Vutek 3r"]
   ];
   function machineOf(name){ for(const [re,c] of MACHINE_RULES) if(re.test(name)) return c; return "Other"; }
-  function modelOf(m){ return m.replace(/\s*#\d+$/,"").replace(/(325)\s*-\s*[12]$/,"$1").trim(); }
+  function modelOf(m){ return m.replace(/-[12]$/,"").trim(); }
   function materialOf(name, loc){
     let s = name.replace(new RegExp("^\\s*"+loc+"\\s+","i"), "");
     for(const [re] of MACHINE_RULES) s = s.replace(re, "");
     return s.replace(/\s+/g," ").trim();
   }
-  function shortUnit(machine){ return machine.replace(/^Durst Rhotex /,"").replace(/^Durst /,"").replace(/^EFI /,""); }
+  function shortUnit(machine){ return machine; }  // names already short (D325-1, P5-Tex-1, ...)
   const SC = { ok:"var(--green)", warn:"var(--amber)", oot:"var(--red)", crit:"var(--crit)" };
   const LOCN = { CA:"California", MX:"Mexico", PA:"Pennsylvania" };
   function matsFor(loc){ return (typeof DATA !== "undefined" && DATA[loc] && DATA[loc].materials) || []; }
