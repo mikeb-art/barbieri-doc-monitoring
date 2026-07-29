@@ -359,9 +359,10 @@ function updateSidebarCounts(){
 
 /* ============ MACHINE PARSING (added) ============ */
 const MACHINE_RULES = [
-  [/rhotex\s*325\s*-?\s*1|durst\s*325\s*-?\s*1|d325\s*-?\s*1/i, "Durst Rhotex 325-1"],
-  [/rhotex\s*325\s*-?\s*2|durst\s*325\s*-?\s*2|d325\s*-?\s*2/i, "Durst Rhotex 325-2"],
-  [/rhotex\s*325|durst\s*325|d325/i, "Durst Rhotex 325"],
+  // match 325 with or without a Durst/Rhotex/D prefix, in any word order (e.g. "325-2 Stretch", "Stretch 325-2", "D325-2", "Durst 325 -2")
+  [/\b(?:rhotex\s*|durst\s*|d)?325\s*-?\s*1\b/i, "Durst Rhotex 325-1"],
+  [/\b(?:rhotex\s*|durst\s*|d)?325\s*-?\s*2\b/i, "Durst Rhotex 325-2"],
+  [/\b(?:rhotex\s*|durst\s*|d)?325\b/i, "Durst Rhotex 325"],
   [/p5-?tex-?\s*1/i, "Durst P5-Tex #1"],
   [/p5-?tex-?\s*2/i, "Durst P5-Tex #2"],
   [/p5-?tex/i, "Durst P5-Tex"],
