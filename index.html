@@ -851,7 +851,7 @@ function tAll(on){
   function buildIdx(){
     const idx = {};
     ["CA","MX","PA"].forEach(loc => {
-      const mats = (window.DATA && DATA[loc] && DATA[loc].materials) || [];
+      const mats = (typeof DATA !== "undefined" && DATA[loc] && DATA[loc].materials) || [];
       mats.forEach(m => {
         const mac = machineOf(m.name);
         (idx[loc] = idx[loc] || {});
@@ -875,7 +875,7 @@ function tAll(on){
     if(sub) sub.textContent = "Same machine model compared across locations — spot the site running hot. Machines at only one location are listed separately (not comparable).";
     const el = document.getElementById("content");
     if(!el) return;
-    if(!window.DATA || !Object.keys(DATA).length){
+    if(typeof DATA === "undefined" || !DATA || !Object.keys(DATA).length){
       el.innerHTML = '<div class="gate"><div class="big">🖨️</div><h2>By Machine</h2><p>Sign in to load ΔE data.</p></div>';
       return;
     }
