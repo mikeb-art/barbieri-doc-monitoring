@@ -853,6 +853,15 @@ function tAll(on){
   const SC = { ok:"var(--green)", warn:"var(--amber)", oot:"var(--red)", crit:"var(--crit)" };
   const LOCN = { CA:"California", MX:"Mexico", PA:"Pennsylvania" };
   function matsFor(loc){ return (typeof DATA !== "undefined" && DATA[loc] && DATA[loc].materials) || []; }
+  // ---- date-range window for the printer-to-printer comparison ----
+  function curWin(){ const v = parseInt(localStorage.getItem("bm_win") || "0", 10); return isNaN(v) ? 0 : v; }
+  window.setBmWindow = function(d){ localStorage.setItem("bm_win", String(d)); if(window.showMachineView) window.showMachineView(); };
+  function worstInWindow(m, days){
+    const cutoff = days > 0 ? Date.now() - days*86400000 : 0;
+    let w = -1;
+    m.points.forEach(p => { if(p[0].getTime() >= cutoff && p[1] > w) w = p[1]; });
+    return w;
+  }
 
   // {loc: {machine: [materialObj,...]}}
   function buildIdx(){
@@ -868,18 +877,18 @@ function tAll(on){
 
   // {loc: {model: {units:{machine:1}, mats:{matKey:{label, vals:{machine:ΔE}}}}}}
   function buildP2P(){
-    const out = {};
+    const out = {}, win = curWin();
     ["CA","MX","PA"].forEach(loc => matsFor(loc).forEach(m => {
       const machine = machineOf(m.name); if(machine === "Other") return;
       const material = materialOf(m.name, loc); if(!material) return;
-      const l = latest(m); if(!l) return;
+      const w = worstInWindow(m, win); if(w < 0) return;   // no reading in the selected window
       const model = modelOf(machine);
       const key = material.toLowerCase().replace(/\s+/g,"");
       out[loc] = out[loc] || {};
       const M = out[loc][model] = out[loc][model] || { units:{}, mats:{} };
       M.units[machine] = 1;
       const mm = M.mats[key] = M.mats[key] || { label: material, vals:{} };
-      mm.vals[machine] = Math.max(mm.vals[machine] ?? -1, l[1]);
+      mm.vals[machine] = Math.max(mm.vals[machine] ?? -1, w);
     }));
     return out;
   }
@@ -924,6 +933,14 @@ function tAll(on){
       ? `<table><thead><tr><th>Machine model</th><th style="text-align:center">California</th><th style="text-align:center">Mexico</th><th style="text-align:center">Pennsylvania</th></tr></thead><tbody>${comparable.map(xrow).join("")}</tbody></table>`
       : '<div class="empty"><div class="ei">📭</div>No models are run at more than one location yet.</div>';
     html += `</div>`;
+
+    // ---------- Date-range selector (applies to the printer-to-printer comparisons below) ----------
+    const win = curWin();
+    const pill = (d,label) => `<button class="pill${win===d?" on":""}" onclick="setBmWindow(${d})">${label}</button>`;
+    html += `<div class="panel" style="padding:12px 18px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-weight:700;font-size:13px;color:#3d5a80">Printer-to-printer range:</span>
+        ${pill(30,"30 days")}${pill(60,"60 days")}${pill(90,"90 days")}${pill(180,"180 days")}${pill(0,"All time")}
+        <span class="ago" style="margin-left:auto">worst ΔE each unit hit in the selected window</span></div>`;
 
     // ---------- Printer-to-printer (same location, unit vs unit, per material) ----------
     const p2p = buildP2P();
